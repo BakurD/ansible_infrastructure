@@ -1,0 +1,61 @@
+---
+- name: Provision Vultr instance and assign IP addresses
+  hosts: localhost
+  gather_facts: False
+
+  vars:
+    vultr_api_key: "YOUR_VULTR_API_KEY"
+    vultr_region: "YOUR_VULTR_REGION"
+    vultr_plan: "YOUR_VULTR_PLAN"
+    vultr_os: "YOUR_VULTR_OPERATING_SYSTEM"
+    dns_provider: "YOUR_DNS_PROVIDER"
+    dns_api_key: "YOUR_DNS_API_KEY"
+    dns_zone: "YOUR_DNS_ZONE"
+    dns_record_name: "YOUR_DNS_RECORD_NAME"
+
+  tasks:
+    - name: Create Vultr instance
+      vultr_server:
+        state: present
+        api_key: "{{ vultr_api_key }}"
+        region: "{{ vultr_region }}"
+        plan: "{{ vultr_plan }}"
+        os: "{{ vultr_os }}"
+        wait: yes
+      register: instance
+
+    - name: Assign main IP to instance
+      vultr_ip:
+        instance_id: "{{ instance.instance.id }}"
+        api_key: "{{ vultr_api_key }}"
+        wait: yes
+      register: main_ip
+
+    - name: Assign additional IPs to instance
+      vultr_ip:
+        instance_id: "{{ instance.instance.id }}"
+        api_key: "{{ vultr_api_key }}"
+        count: 2
+        wait: yes
+      register: additional_ips
+
+    - name: Update DNS records
+      uri:
+        url: "https://api.yourdnsprovider.com/update-dns"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body: |
+          {
+            "api_key": "{{ dns_api_key }}",
+            "zone": "{{ dns_zone }}",
+            "record_name": "{{ dns_record_name }}",
+            "ip_addresses": [
+              "{{ main_ip.address }}",
+              "{{ additional_ips.addresses[0] }}",
+              "{{ additional_ips.addresses[1] }}"
+            ]
+          }
+        body_format: json
+        validate_certs: no
+      when: instance.changed
