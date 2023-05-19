@@ -1,0 +1,78 @@
+- name: Deploy AWS infrastructure
+  hosts: localhost
+  vars:
+    region: us-east-1
+    asg_name: my-asg
+    instance_type: t2.micro
+    desired_capacity: 2
+    # public_dns_names:
+    #   - instance1.example.com
+    #   - instance2.example.com
+  tasks:
+    - name: Get VPC subnet info
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ region }}"
+      register: subnet_info
+
+    - name: Set first available subnet ID
+      set_fact:
+        vpc_subnet_id: "{{ subnet_info.subnets[0].subnet_id }}"
+
+    - name: Get latest AMI ID
+      amazon.aws.ec2_ami_info:
+        region: "{{ region }}"
+        owners: amazon
+        filters:
+          name: "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"
+      register: ami_info
+
+    - name: Create Security Group
+      amazon.aws.ec2_group:
+        name: my-security-group
+        description: My Security Group
+        vpc_id: "{{ subnet_info.subnets[0].vpc_id }}"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+              - 80
+              - 443
+            cidr_ip: 0.0.0.0/0
+
+    - name: Create Launch Configuration
+      community.aws.autoscaling_launch_config:
+        name: "{{ asg_name }}-lc"
+        image_id: "ami-007855ac798b5175e"
+        instance_type: "{{ instance_type }}"
+        security_groups: ["sg-01888c073cc69bab8"]
+        key_name: "CentOS"
+        region: "{{ region }}"
+      register: lc_result
+
+    - name: Create Auto Scaling Group
+      community.aws.autoscaling_group:
+        name: "{{ asg_name }}"
+        launch_config_name: "{{ asg_name }}-lc"
+        min_size: 2
+        max_size: 2
+        desired_capacity: "{{ desired_capacity }}"
+        vpc_zone_identifier: "{{ vpc_subnet_id }}"
+        region: "{{ region }}"
+      register: asg_result
+
+    - name: associate new elastic IPs with each of the instances
+      amazon.aws.ec2_eip:
+        device_id: "{{ item }}"
+      loop: "{{ asg_result.instances }}"
+
+
+    # - name: Add DNS records for public IPs
+    #   community.aws.route53:
+    #     command: create
+    #     zone: example.com
+    #     record: "{{ item }}"
+    #     type: A
+    #     ttl: 300
+    #     value: "{{ public_ip_result.public_ip_addresses[loop.index0] }}"
+    #   loop: "{{ public_dns_names }}"
