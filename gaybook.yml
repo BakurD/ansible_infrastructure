@@ -46,7 +46,7 @@
     - name: Create Launch Configuration
       community.aws.autoscaling_launch_config:
         name: "{{ asg_name }}-lc"
-        image_id: "ami-007855ac798b5175e"
+        image_id: "{{ ami_info.images[0].id }}"
         instance_type: "{{ instance_type }}"
         security_groups: "{{ [security_group_id] }}"
         key_name: "CentOS"
